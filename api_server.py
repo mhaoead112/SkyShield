@@ -94,7 +94,7 @@ def format_locations(aq_data, weather_data):
                 for aq in city_aq
             ],
             "weather": city_weather if city_weather else {},
-            "timestamp": cairo_time(),  # ✅ Local Cairo time
+            "timestamp": cairo_time(),
         }
         locations.append(location)
 
@@ -112,7 +112,8 @@ def root():
 @app.get("/airquality")
 def get_air_quality():
     aq_data = collect_all_data()
-    weather_data = get_weather_data()  # ✅ Fetch live data each call
+    # ✅ Pass CONFIG["north_america_cities"] to get_weather_data
+    weather_data = get_weather_data(CONFIG["north_america_cities"])
     locations = format_locations(aq_data, weather_data)
 
     return JSONResponse(
@@ -123,7 +124,7 @@ def get_air_quality():
 @app.get("/alerts")
 def get_alerts():
     aq_data = collect_all_data()
-    weather_data = get_weather_data()  # ✅ Live data
+    weather_data = get_weather_data(CONFIG["north_america_cities"])
     locations = format_locations(aq_data, weather_data)
 
     alerts = []
@@ -148,7 +149,7 @@ def get_alerts():
 @app.get("/history")
 def get_history():
     aq_data = collect_all_data()
-    weather_data = get_weather_data()  # ✅ Fetch fresh history too
+    weather_data = get_weather_data(CONFIG["north_america_cities"])
     locations = format_locations(aq_data, weather_data)
     return JSONResponse(
         content={"history": locations},
