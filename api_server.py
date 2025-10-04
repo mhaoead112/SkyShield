@@ -10,8 +10,11 @@ from skyshield import collect_all_data, get_weather_data, CONFIG
 app = FastAPI()
 
 # Configure CORS from environment (comma-separated list) or default to allow localhost and Vercel origin
-allowed = os.environ.get("ALLOWED_ORIGINS", "http://localhost:3000,https://*.vercel.app")
-allow_list = [o.strip() for o in allowed.split(',') if o.strip()]
+allow_list = [
+    "http://localhost:3000",
+    "https://sky-shield-puce.vercel.app"
+]
+
 
 # CORS setup so frontend (Next.js) can call backend
 app.add_middleware(
