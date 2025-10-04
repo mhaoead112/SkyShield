@@ -1,6 +1,7 @@
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
-from datetime import datetime
+from fastapi.responses import JSONResponse
+from datetime import datetime, timezone, timedelta
 import uvicorn
 import os
 
@@ -9,14 +10,14 @@ from skyshield import collect_all_data, get_weather_data, CONFIG
 
 app = FastAPI()
 
-# Configure CORS from environment (comma-separated list) or default to allow localhost and Vercel origin
+# ------------------------------------------------
+# ✅ CORS Configuration
+# ------------------------------------------------
 allow_list = [
     "http://localhost:3000",
     "https://sky-shield-puce.vercel.app"
 ]
 
-
-# CORS setup so frontend (Next.js) can call backend
 app.add_middleware(
     CORSMiddleware,
     allow_origins=allow_list or ["*"],
@@ -25,9 +26,15 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# -------------------------
-# Format function to unify JSON
-# -------------------------
+# ------------------------------------------------
+# ✅ Helper: Cairo timezone
+# ------------------------------------------------
+def cairo_time():
+    return datetime.now(timezone(timedelta(hours=3))).strftime("%Y-%m-%d %H:%M:%S")
+
+# ------------------------------------------------
+# ✅ Format unified JSON structure
+# ------------------------------------------------
 def format_locations(aq_data, weather_data):
     cities = CONFIG["north_america_cities"]
     locations = []
@@ -36,15 +43,13 @@ def format_locations(aq_data, weather_data):
         city_name = city["city"]
         country = city["country"]
 
-        # Get AQ and weather for this city
         city_aq = [d for d in aq_data if d["city"] == city_name and d["country"] == country]
         city_weather = weather_data.get(f"{city_name}_{country}")
 
         if not city_aq and not city_weather:
             continue
 
-        # --- FIX: Compute AQI ---
-        # Prefer provided AQI if exists, else derive from PM2.5, O3, NO2
+        # --- Compute AQI ---
         aqi_value = None
         for aq in city_aq:
             if "aqi" in aq and aq["aqi"]:
@@ -52,22 +57,22 @@ def format_locations(aq_data, weather_data):
                 break
 
         if not aqi_value:
-            # Try deriving from PM2.5
             pm25 = next((aq["value"] for aq in city_aq if aq["pollutant"] == "PM2_5"), None)
             if pm25:
-                # EPA breakpoint conversion (simplified)
-                if pm25 <= 12: aqi_value = int((pm25 / 12) * 50)
-                elif pm25 <= 35.4: aqi_value = int(50 + (pm25 - 12.1) * (100 - 51) / (35.4 - 12.1))
-                elif pm25 <= 55.4: aqi_value = int(101 + (pm25 - 35.5) * (150 - 101) / (55.4 - 35.5))
-                else: aqi_value = int(151 + (pm25 - 55.5) * (200 - 151) / (150.4 - 55.5))
+                if pm25 <= 12:
+                    aqi_value = int((pm25 / 12) * 50)
+                elif pm25 <= 35.4:
+                    aqi_value = int(50 + (pm25 - 12.1) * (100 - 51) / (35.4 - 12.1))
+                elif pm25 <= 55.4:
+                    aqi_value = int(101 + (pm25 - 35.5) * (150 - 101) / (55.4 - 35.5))
+                else:
+                    aqi_value = int(151 + (pm25 - 55.5) * (200 - 151) / (150.4 - 55.5))
 
-            # If still missing, fallback to NO2
             if not aqi_value:
                 no2 = next((aq["value"] for aq in city_aq if aq["pollutant"] == "NO2"), None)
-                if no2: 
+                if no2:
                     aqi_value = min(200, int(no2 / 200 * 150))
 
-            # If still missing, fallback to O3
             if not aqi_value:
                 o3 = next((aq["value"] for aq in city_aq if aq["pollutant"] == "O3"), None)
                 if o3:
@@ -89,17 +94,16 @@ def format_locations(aq_data, weather_data):
                 for aq in city_aq
             ],
             "weather": city_weather if city_weather else {},
-            "timestamp": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+            "timestamp": cairo_time(),  # ✅ Local Cairo time
         }
         locations.append(location)
 
     return locations
 
 
-
-# -------------------------
-# API Routes
-# -------------------------
+# ------------------------------------------------
+# ✅ API Routes
+# ------------------------------------------------
 
 @app.get("/")
 def root():
@@ -108,14 +112,18 @@ def root():
 @app.get("/airquality")
 def get_air_quality():
     aq_data = collect_all_data()
-    from skyshield import weather_data  # grab global weather_data
+    weather_data = get_weather_data()  # ✅ Fetch live data each call
     locations = format_locations(aq_data, weather_data)
-    return {"locations": locations}
+
+    return JSONResponse(
+        content={"locations": locations},
+        headers={"Cache-Control": "no-store, no-cache, must-revalidate, max-age=0"}
+    )
 
 @app.get("/alerts")
 def get_alerts():
     aq_data = collect_all_data()
-    from skyshield import weather_data
+    weather_data = get_weather_data()  # ✅ Live data
     locations = format_locations(aq_data, weather_data)
 
     alerts = []
@@ -132,22 +140,25 @@ def get_alerts():
         else:
             alerts.append({"city": loc["name"], "level": "GOOD", "message": "Good air quality"})
 
-    return {"alerts": alerts, "locations": locations}
+    return JSONResponse(
+        content={"alerts": alerts, "locations": locations},
+        headers={"Cache-Control": "no-store, no-cache, must-revalidate, max-age=0"}
+    )
 
 @app.get("/history")
 def get_history():
-    # For now return last collected data (SkyShield saves CSV)
-    # Later you can load from saved CSV files if needed
     aq_data = collect_all_data()
-    from skyshield import weather_data
+    weather_data = get_weather_data()  # ✅ Fetch fresh history too
     locations = format_locations(aq_data, weather_data)
-    return {"history": locations}
+    return JSONResponse(
+        content={"history": locations},
+        headers={"Cache-Control": "no-store, no-cache, must-revalidate, max-age=0"}
+    )
 
 
-# -------------------------
-# Run server
-# -------------------------
+# ------------------------------------------------
+# ✅ Run server
+# ------------------------------------------------
 if __name__ == "__main__":
     port = int(os.environ.get("PORT", 5000))
-    # When deploying on Render, do not use reload and set workers appropriately
     uvicorn.run("api_server:app", host="0.0.0.0", port=port, reload=False)
