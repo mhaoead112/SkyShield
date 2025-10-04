@@ -4,7 +4,6 @@ import dynamic from "next/dynamic";
 import { fetchAirQuality } from "../lib/api";
 import LegendControl from "./LegendControl";
 import "leaflet/dist/leaflet.css";
-import L from "leaflet";
 
 const MapContainer = dynamic(() => import("react-leaflet").then(m => m.MapContainer), { ssr: false });
 const TileLayer = dynamic(() => import("react-leaflet").then(m => m.TileLayer), { ssr: false });
@@ -29,6 +28,13 @@ export default function AQMapSection({ onSelect }) {
   const [miniZoom, setMiniZoom] = useState(3);
   const mainMapRef = useRef(null);
   const miniMapRef = useRef(null);
+  const [L, setL] = useState(null);
+
+  useEffect(() => {
+    import("leaflet").then(leaflet => {
+      setL(leaflet);
+    });
+  }, []);
 
   useEffect(() => {
     if (!map) return;
@@ -118,7 +124,7 @@ export default function AQMapSection({ onSelect }) {
             attribution='&copy; <a href="https://carto.com/">CARTO</a>'
             url="https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}@2x.png"
           />
-          {locations.map((loc, i) => {
+          {L && locations.map((loc, i) => {
             const iconHtml = `
               <div style="
                 background:${getColor(loc.aqi)};
